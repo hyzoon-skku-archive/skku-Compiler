@@ -78,8 +78,9 @@ ANTLR가 생성한 simpleCBaseVisitor를 상속받아, 파싱 트리의 각 노�
 - `String getFullText(ParserRuleContext ctx)`: 주어진 파서 규칙 컨텍스트의 전체 텍스트를 원본 소스 코드에서 추출하여 반환. (ANTLR 토큰 스트림 사용, `ctx.getText()` 사용해도 무방함)
 - `void ensureCurrentBlock()`: currentBlock이 null일 경우 (예: return 문 처리 후) 새로운 블록을 생성하여 statement를 추가할 수 있도록 보장.
 - `void PrintCFG()`: 모든 함수의 CFG를 출력. 각 함수의 BasicBlock들을 정렬한 후, 각 블록의 정보를 출력.
-- `void MergeEmptyBlocks(Function func)`: 내용이 비어 있고 predecessor가 하나뿐인 블록들을 제거하여 CFG를 단순화. predecessor의 successor 목록에서 해당 블록을 제거하고, predecessor와 successor를 직접 연결.
-- `void updateFollowBlockMappings(Function func)`: `mergeEmptyBlocks`로 인해 기존의 follow 블록이 제거되었을 경우, loopFollowBlocks 맵이 제거된 블록 대신 실제 실행될 다음 블록을 가리키도록 업데이트.
+- `void mergeEmptyBlocks(Function func)`: 내용이 비어 있고 **후속 블록(successor)이 하나뿐인** 블록들을 제거하여 CFG를 단순화. predecessor의 successor 목록에서 해당 블록을 제거하고, predecessor와 successor를 직접 연결.
+- `void updateTargetMappings(Function func)`: `mergeEmptyBlocks`로 인해 제어문의 분기 대상 블록(target block)이 제거되었을 수 있으므로, `if-then-else` 및 `loop`문의 대상 블록 매핑(`ifThenTargets`, `ifElseTargets`, `loopFollowBlocks`)이 항상 유효한 다음 블록을 가리키도록 갱신.
+- `void removeDeadBlocks(Function func)`: **(추가된 기능)** 함수의 `entry` 블록에서부터 도달할 수 없는 블록(dead node)들을 CFG에서 제거. 그래프 순회를 통해 모든 도달 가능한 블록을 찾고, 그 외의 블록들은 삭제하여 CFG를 최적화.
 - `void renumberBlocks(Function func)`: BasicBlock들을 ID 기준으로 정렬한 후, 블록 번호를 0부터 재부여.
 - `void updateLabels(Function func)`: 모든 플레이스홀더 문자열을 실제 블록 ID로 교체. `loopFollowBlocks`, `ifThenTargets`, `ifElseTargets` 맵을 사용하여 각 조건 블록이 가리키는 실제 follow, then, else 블록의 ID로 플레이스홀더를 대체.
 
@@ -91,11 +92,11 @@ ANTLR가 생성한 simpleCBaseVisitor를 상속받아, 파싱 트리의 각 노�
     - 함수의 진입 블록, first 블록 생성 및 `currentBlock`에 first 블록 할당.
     - `visit(ctx.compoundStmt())` 호출하여 함수 본문을 순회하며 CFG 구축.
     - successor가 없는 블록(return되지 않고 끝나는 경로)을 exit 블록으로 연결.
-    - 모든 후처리 단계를 순서대로 실행하여 현재 함수의 CFG를 최종적으로 완성.
+    - 모든 후처리 단계를 순서대로 실행(`mergeEmptyBlocks` → `updateTargetMappings` → `removeDeadBlocks` → `renumberBlocks` → `updateLabels`)하여 현재 함수의 CFG를 최종적으로 완성.
 - `void visitDeclaration(simpleCParser.DeclarationContext ctx)`: 변수 선언에 대한 CFG를 생성.
-- `void visitAssignStmt(simpleCParser.AssignStmtContext ctx)`: 할당문에 대한 CFG를 생성. (함수 호출 확인)
-- `void visitCallStmt(simpleCParser.CallStmtContext ctx)`: 함수 호출문에 대한 CFG를 생성.
-- `void visitReturnStmt(simpleCParser.ReturnStmtContext ctx)`: return문에 대한 CFG를 생성. `currentBlock` 을 `null`로 설정하고, exit 블록으로 연결.
+- `void visitAssignStmt(simpleCParser.AssignStmtContext ctx)`: 할당문을 현재 블록에 추가. 표현식 내에 함수 호출이 있다면, 해당 라인에 주석으로 호출 정보를 덧붙임.
+- `void visitCallStmt(simpleCParser.CallStmtContext ctx)`: 함수 호출문을 현재 블록에 추가하고, 호출 정보를 주석으로 같은 라인에 덧붙임.
+- `void visitRetStmt(simpleCParser.RetStmtContext ctx)`: return문을 현재 블록에 추가하고 exit 블록으로 연결. 표현식 내 함수 호출 정보도 주석으로 덧붙임. 이 블록은 터미널 블록이므로 `currentBlock`을 `null`로 설정.
 - `void visitIfStmt(simpleCParser.IfStmtContext ctx)`: if문에 대한 CFG를 생성. 
     - `currentBlock`이 조건(condition) 블록이 되고, if (...) 문장을 플레이스홀더와 함께 추가.
     - `thenBlock`, `elseBlock`(있는 경우), 그리고 if문 전체가 끝난 후 코드가 합쳐지는 `joinBlock`을 새로 생성.
@@ -117,12 +118,3 @@ ANTLR가 생성한 simpleCBaseVisitor를 상속받아, 파싱 트리의 각 노�
     - `currentBlock`을 `bodyBlock`으로 설정하고 본문을 visit. `bodyBlock`의 successor로 `incBlock`을 추가.
     - `currentBlock`을 `incBlock`으로 설정하고 증감문을 추가. `incBlock`의 successor로 조건 블록을 추가(루프).
     - `currentBlock`을 `followBlock`으로 설정하여 이후 코드를 계속 작성.
-
-### 4. `CFGBuilder` Class
-
-`main` 메서드를 포함하는 진입점 클래스.
-
-- `public static void main(String[] args)`: 
-    - 명령줄 인자로부터 C 소스 파일 경로를 읽음.
-    - ANTLR의 `CharStreams`와 `CommonTokenStream`을 사용하여 소스 파일을 파싱.
-    - 파싱된 트리의 루트 노드인 `program` 노드를 `CFAVisitor`로 방문하여 CFG 생성 시작.

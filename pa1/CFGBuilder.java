@@ -51,7 +51,7 @@ class BasicBlock {
     @Override public String toString() {
         StringBuilder sb = new StringBuilder();
         sb.append("@").append(id).append("\n{\n");
-        for (String stmt : statements) sb.append(stmt).append("\n");
+        for (String stmt : statements) sb.append("    ").append(stmt.replace("\n", "\n    ")).append("\n");
         sb.append("}\n");
         sb.append("Predecessors: ").append(getBlockNames(predecessors)).append("\n");
         sb.append("Successors: ").append(getBlockNames(successors)).append("\n");
@@ -160,7 +160,7 @@ class CFAVisitor extends simpleCBaseVisitor<Void> {
         
         // Print global declarations
         System.out.println("@globals {");
-        for (String g : globalDeclarations) System.out.println(g);
+        for (String g : globalDeclarations) System.out.println("    " + g);
         System.out.println("}");
         System.out.println("Predecessors: -");
         System.out.println("Successors: -\n");
@@ -173,9 +173,9 @@ class CFAVisitor extends simpleCBaseVisitor<Void> {
                 // Print function metadata at the entry block
                 if (b == f.entry) { 
                     System.out.println("@" + f.entry.id + " {");
-                    System.out.println("name: " + f.name);
-                    System.out.println("ret_type: " + f.returnType);
-                    System.out.println("args: " + f.args);
+                    System.out.println("    name: " + f.name);
+                    System.out.println("    ret_type: " + f.returnType);
+                    System.out.println("    args: " + f.args);
                     System.out.println("}");
                     String succ = "-";
                     if (!f.entry.successors.isEmpty()) succ = f.entry.successors.iterator().next().id;
@@ -192,7 +192,7 @@ class CFAVisitor extends simpleCBaseVisitor<Void> {
     }
 
     /**
-     * (helper) Post-processing step to merge empty blocks that have a single predecessor.
+     * (helper) Post-processing step to merge empty blocks that have a single successor.
      * @param func The function whose CFG is to be simplified.
      */
     private void mergeEmptyBlocks(Function func) {
@@ -202,45 +202,107 @@ class CFAVisitor extends simpleCBaseVisitor<Void> {
             List<BasicBlock> toRemove = new ArrayList<>();
             for (BasicBlock block : new ArrayList<>(func.blocks)) {
                 if (block == func.entry || block == func.exit) continue;
-                if (block.statements.isEmpty() && !block.predecessors.isEmpty()) {
-                    // Re-wire predecessors to point to this block's successors
+
+                // Merge condition: empty, has predecessors, and has exactly one successor
+                if (block.statements.isEmpty() && !block.predecessors.isEmpty() && block.successors.size() == 1) {
+                    BasicBlock successor = block.successors.iterator().next();
+                    
+                    // Re-wire predecessors to point to this block's successor
                     for (BasicBlock pred : new ArrayList<>(block.predecessors)) {
                         pred.successors.remove(block);
-                        for (BasicBlock succ : block.successors) pred.addSuccessor(succ);
+                        pred.addSuccessor(successor);
                     }
-                    // Re-wire successors to point to this block's predecessors
-                    for (BasicBlock succ : new ArrayList<>(block.successors)) {
-                        succ.predecessors.remove(block);
-                    }
+                    
+                    // Re-wire successor to remove this block from its predecessors
+                    successor.predecessors.remove(block);
+
                     toRemove.add(block);
                     changed = true;
                 }
             }
-            func.blocks.removeAll(toRemove);
+            if (!toRemove.isEmpty()) {
+                func.blocks.removeAll(toRemove);
+            }
         } while (changed);
     }
     
     /**
      * (helper) After merging, the original target of a placeholder (e.g., a follow block) might have been removed.
-     * This method updates the mappings to point to the correct, non-empty successor block.
+     * This method updates all target mappings (for if, else, loop_end) to point to the correct, non-empty successor block.
      * @param func The function being processed.
      */
-    private void updateFollowBlockMappings(Function func) {
-        Map<BasicBlock, BasicBlock> updated = new HashMap<>();
-        for (Map.Entry<BasicBlock, BasicBlock> e : loopFollowBlocks.entrySet()) {
-            BasicBlock cond   = e.getKey();
-            BasicBlock follow = e.getValue();
-            
-            // Traverse down the chain of empty blocks to find the first non-empty successor
-            while (follow != func.entry && follow != func.exit &&
-                   follow.statements.isEmpty() && follow.successors.size() == 1) {
-                follow = follow.successors.iterator().next();
+    private void updateTargetMappings(Function func) {
+        // Helper to traverse down a chain of empty blocks to find the first non-empty successor
+        java.util.function.Function<BasicBlock, BasicBlock> findActualTarget = (startBlock) -> {
+            BasicBlock current = startBlock;
+            while (current != func.entry && current != func.exit &&
+                   current.statements.isEmpty() && current.successors.size() == 1) {
+                current = current.successors.iterator().next();
             }
-            updated.put(cond, follow);
+            return current;
+        };
+
+        // Update loopFollowBlocks
+        Map<BasicBlock, BasicBlock> updatedLoopFollows = new HashMap<>();
+        for (Map.Entry<BasicBlock, BasicBlock> entry : loopFollowBlocks.entrySet()) {
+            updatedLoopFollows.put(entry.getKey(), findActualTarget.apply(entry.getValue()));
         }
         loopFollowBlocks.clear();
-        loopFollowBlocks.putAll(updated);
+        loopFollowBlocks.putAll(updatedLoopFollows);
+
+        // Update ifThenTargets
+        Map<BasicBlock, BasicBlock> updatedIfThens = new HashMap<>();
+        for (Map.Entry<BasicBlock, BasicBlock> entry : ifThenTargets.entrySet()) {
+            updatedIfThens.put(entry.getKey(), findActualTarget.apply(entry.getValue()));
+        }
+        ifThenTargets.clear();
+        ifThenTargets.putAll(updatedIfThens);
+        
+        // Update ifElseTargets
+        Map<BasicBlock, BasicBlock> updatedIfElses = new HashMap<>();
+        for (Map.Entry<BasicBlock, BasicBlock> entry : ifElseTargets.entrySet()) {
+            updatedIfElses.put(entry.getKey(), findActualTarget.apply(entry.getValue()));
+        }
+        ifElseTargets.clear();
+        ifElseTargets.putAll(updatedIfElses);
     }
+
+    /**
+     * (helper) Post-processing step to remove dead/unreachable blocks from the CFG.
+     * Performs a graph traversal starting from the entry block to find all live blocks.
+     * @param func The function whose CFG is to be pruned.
+     */
+    private void removeDeadBlocks(Function func) {
+        Set<BasicBlock> reachable = new HashSet<>();
+        Queue<BasicBlock> worklist = new LinkedList<>();
+
+        if (func.entry != null) {
+            reachable.add(func.entry);
+            worklist.add(func.entry);
+        }
+
+        while (!worklist.isEmpty()) {
+            BasicBlock current = worklist.poll();
+            for (BasicBlock succ : current.successors) {
+                if (reachable.add(succ)) {
+                    worklist.add(succ);
+                }
+            }
+        }
+        
+        // The exit block is reachable if any of its predecessors are reachable.
+        if (func.exit != null && func.exit.predecessors.stream().anyMatch(reachable::contains)) {
+            reachable.add(func.exit);
+        }
+
+        func.blocks.retainAll(reachable);
+        
+        // Clean up predecessor lists of remaining blocks
+        for (BasicBlock block : func.blocks) {
+            block.predecessors.retainAll(reachable);
+        }
+    }
+
 
     /**
      * (helper) Post-processing step to renumber the basic blocks sequentially after all merges and structuring.
@@ -353,10 +415,11 @@ class CFAVisitor extends simpleCBaseVisitor<Void> {
         currentFunction.addBlock(currentFunction.exit);
 
         // post-processing steps
-        mergeEmptyBlocks(currentFunction);              // Remove redundant empty blocks
-        updateFollowBlockMappings(currentFunction);     // Update mappings after merging
-        renumberBlocks(currentFunction);                // Renumber blocks for clean, sequential IDs
-        updateLabels(currentFunction);                  // Replace placeholders with final block IDs
+        mergeEmptyBlocks(currentFunction);
+        updateTargetMappings(currentFunction);
+        removeDeadBlocks(currentFunction); 
+        renumberBlocks(currentFunction);
+        updateLabels(currentFunction);
 
         // Reset state
         currentFunction = null;
@@ -378,40 +441,43 @@ class CFAVisitor extends simpleCBaseVisitor<Void> {
 
     /**
      * Visits an assignment statement, adding it to the current block.
-     * Also collects any function calls within the expression and adds call statements.
      * @param ctx The assignment statement context.
      * @return null.
      */
     @Override
     public Void visitAssignStmt(simpleCParser.AssignStmtContext ctx) {
         ensureCurrentBlock();
-        currentBlock.addStatement(getFullText(ctx));
+        String stmtText = getFullText(ctx);
+        
         List<String> callees = new ArrayList<>();
         collectCallees(ctx.assign().expr(), callees);
+
+        StringBuilder comments = new StringBuilder();
         for (String callee : callees) {
-            currentBlock.addStatement("# call in expr: " + callee + " -> " + callee + "_entry");
+            comments.append(" # call in expr: ").append(callee).append(" -> ").append(callee).append("_entry");
         }
+        
+        currentBlock.addStatement(stmtText + comments.toString());
         return null;
     }
 
     /**
      * Visits a function call statement, adding it to the current block.
-     * Also adds a call statement indicating the function being called.
      * @param ctx The call statement context.
      * @return null.
      */
     @Override
     public Void visitCallStmt(simpleCParser.CallStmtContext ctx) {
         ensureCurrentBlock();
-        currentBlock.addStatement(getFullText(ctx));
+        String stmtText = getFullText(ctx);
         String callee = ctx.call().ID().getText();
-        currentBlock.addStatement("# call: " + callee + " -> " + callee + "_entry");
+        String comment = " # call: " + callee + " -> " + callee + "_entry";
+        currentBlock.addStatement(stmtText + comment);
         return null;
     }
 
     /**
      * Visits a return statement, adding it to the current block.
-     * If returning an expression, collects any function calls within it and adds call statements.
      * Connects the current block to the function's exit block and terminates the current block.
      * @param ctx The return statement context.
      * @return null.
@@ -419,14 +485,18 @@ class CFAVisitor extends simpleCBaseVisitor<Void> {
     @Override
     public Void visitRetStmt(simpleCParser.RetStmtContext ctx) {
         ensureCurrentBlock();
+        String stmtText = getFullText(ctx);
+        StringBuilder comments = new StringBuilder();
+
         if (ctx.expr() != null) {
             List<String> callees = new ArrayList<>();
             collectCallees(ctx.expr(), callees);
             for (String callee : callees) {
-                currentBlock.addStatement("# call in return: " + callee + " -> " + callee + "_entry");
+                comments.append(" # call in return: ").append(callee).append(" -> ").append(callee).append("_entry");
             }
         }
-        currentBlock.addStatement(getFullText(ctx));
+        
+        currentBlock.addStatement(stmtText + comments.toString());
         currentBlock.addSuccessor(currentFunction.exit);
         currentBlock = null; // This block is now terminated
         return null;
@@ -453,6 +523,8 @@ class CFAVisitor extends simpleCBaseVisitor<Void> {
 
         BasicBlock thenBlock = createNewBlock();
         condBlock.addSuccessor(thenBlock);
+        ifThenTargets.put(condBlock, thenBlock);
+        
         BasicBlock joinBlock = createNewBlock();
 
         // Visit the 'then' branch
@@ -464,17 +536,15 @@ class CFAVisitor extends simpleCBaseVisitor<Void> {
             // Visit the 'else' branch
             BasicBlock elseBlock = createNewBlock();
             condBlock.addSuccessor(elseBlock);
+            ifElseTargets.put(condBlock, elseBlock);
+            
             currentBlock = elseBlock;
             visit(ctx.stmt(1));
             if (currentBlock != null) currentBlock.addSuccessor(joinBlock); // Connect end of 'else' to 'join'
             
-            // Store mappings for label update
-            ifThenTargets.put(condBlock, thenBlock);
-            ifElseTargets.put(condBlock, elseBlock);
         } else {
             // If no 'else', the condition block can also branch directly to the join block
             condBlock.addSuccessor(joinBlock);
-            ifThenTargets.put(condBlock, thenBlock);
         }
 
         // Continue building from the join block
