@@ -516,9 +516,14 @@ class CFAVisitor extends simpleCBaseVisitor<Void> {
         // Create blocks for the 'then', 'else' (optional), and 'join' (follow) paths.
         boolean hasElse = (ctx.stmt(1) != null);
         StringBuilder line = new StringBuilder();
-        line.append("if (").append(getFullText(ctx.expr())).append(")")
+        String ifCondition = "if (" + getFullText(ctx.expr()) + ")";
+        line.append(ifCondition)
             .append(" # then: ").append(THEN_PLACEHOLDER);
-        if (hasElse) line.append("\n# else: ").append(ELSE_PLACEHOLDER);
+        if (hasElse) {
+            String padding = " ".repeat(ifCondition.length());
+            line.append("\n").append(padding)
+                .append(" # else: ").append(ELSE_PLACEHOLDER);
+        }
         condBlock.addStatement(line.toString());
 
         BasicBlock thenBlock = createNewBlock();
@@ -646,3 +651,6 @@ public class CFGBuilder {
         new CFAVisitor().visit(tree);
     }
 }
+
+
+
