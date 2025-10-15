@@ -1,119 +1,68 @@
-int global_x = 10;
-float global_y = 3.5;
+// test_expressions_and_declarations.c
+// Purpose: To test all expression operators, data types (int, float),
+// and various declaration styles allowed by the grammar.
 
-/* Function with simple if-else and return */
-int test_if_return(int n) {
-    int result;
-    if (n > 0) {
-        result = 1;
-    } else {
-        result = -1;
-    }
-    return result;
+// Global declarations test
+int g_int1, g_int2 = 100;
+float g_float1 = 3.14, g_float2;
+
+// A helper function for testing calls inside expressions.
+int multiply(int a, int b) {
+    return a * b;
 }
 
-/* If without else */
-int test_if_no_else(int n) {
-    int value = 0;
-    if (n > 5) {
-        value = 100;
-    }
-    return value;
+// Tests all supported binary and unary operators.
+int test_all_operators(int a, int b) {
+    int res = 0;
+    float fres = 0.5;
+
+    // Arithmetic operators
+    res = a * b;
+    res = a / b;
+    res = a + b;
+    res = a - b;
+    
+    // Relational operators
+    if (a > b) { res = 1; }
+    if (a < b) { res = 2; }
+    if (a >= b) { res = 3; }
+    if (a <= b) { res = 4; }
+
+    // Equality operators
+    if (a == b) { res = 5; }
+    if (a != b) { res = 6; }
+
+    // Unary operators
+    res = -a;
+    res = +b;
+
+    return res;
 }
 
-/* Nested if example */
-int test_nested_if(int a, int b) {
-    int val = 0;
-    if (a > 0) {
-        if (b > 0) {
-            val = a + b;
-        } else {
-            val = a - b;
-        }
-    } else {
-        val = -1;
-    }
-    return val;
+// Tests function calls and parentheses within expressions.
+float test_expression_contexts() {
+    int x = 10;
+    int y = 20;
+    float z;
+
+    // Test a function call as part of an expression (atom -> call).
+    z = multiply(x, y) + 5.5;
+
+    // Test a parenthesized expression (atom -> LPAREN expr RPAREN).
+    z = (x + y) * 2.0;
+    
+    return z;
 }
 
-/* While loop */
-int test_while(int n) {
-    int sum = 0;
-    int i = 0;
-    while (i < n) {
-        sum = sum + i;
-        i = i + 1;
-    }
-    return sum;
-}
-
-/* For loop (must follow the grammar: for(assign; expr; assign)) */
-int test_for(int n) {
-    int sum = 0;
-    int i;
-    for (i = 0; i < n; i = i + 1) {
-        sum = sum + i;
-    }
-    return sum;
-}
-
-/* Function call (allowed only as standalone statements or right-hand side of assignment) */
-int helper(int x) {
-    return x * 2;
-}
-
-int test_call(int n) {
-    int a;
-    int b;
-    a = helper(n);
-    b = helper(a);
-    return a + b;
-}
-
-/* If inside loop */
-int test_if_in_loop(int n) {
-    int sum = 0;
-    int i;
-    for (i = 0; i < n; i = i + 1) {
-        if (i == 5) {
-            sum = sum + 100;
-        }
-        sum = sum + i;
-    }
-    return sum;
-}
-
-/* Nested control flow (no function calls inside expressions) */
-int test_complex(int n) {
-    int result = 0;
-    int i;
-    for (i = 0; i < n; i = i + 1) {
-        int temp;
-        temp = i * 2;
-        if (temp > 10) {
-            result = result + temp;
-        } else {
-            result = result - temp;
-            if (i == 3) {
-                result = 999;
-            }
-        }
-    }
-    return result;
-}
-
-/* Main function combining calls */
 int main() {
-    int x = 5;
-    int y;
-    y = test_if_return(x);
-    y = test_if_no_else(x);
-    y = test_nested_if(x, 3);
-    y = test_while(10);
-    y = test_for(10);
-    y = test_call(x);
-    y = test_if_in_loop(10);
-    y = test_complex(5);
+    // Local declarations test (single, multiple, initialized, uninitialized)
+    int local_int1;
+    int local_int2 = 50, local_int3;
+    float local_float = 0.99;
+    int result;
+
+    result = test_all_operators(10, 5);
+    g_float2 = test_expression_contexts();
+
     return 0;
 }
-

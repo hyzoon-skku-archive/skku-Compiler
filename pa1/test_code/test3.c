@@ -1,58 +1,65 @@
-int global_counter = 0;
+// test_edge_cases.c
+// Purpose: To achieve grammar coverage by testing edge cases like
+// empty statements, standalone function calls, and unreachable code.
 
-// This function specifically tests the empty block scenario
-int test_empty_blocks(int x) {
-    int result = 0;
-    int i;
-    
-    for (i = 0; i < 5; i = i + 1) {
-        int temp;
-        temp = i * 2;
-        
-        if (temp > 10) {
-            result = result + temp;
-        } else {
-            result = result - temp;
-            if (i == 3) {
-                result = 999;
-            }
-        }
-    }
-    
-    return result;
+/* Block comments should be ignored. */
+int g_counter = 0;
+
+// Helper function that modifies a global, simulating a void return.
+int void_like_helper(int val) {
+    g_counter = g_counter + val;
+    return 0;
 }
 
-// Test if without else (should not create empty merge block)
-int test_simple_if(int n) {
-    if (n > 0) {
-        n = n + 1;
-    }
-    return n;
+// Tests standalone function calls (callStmt rule).
+void test_standalone_calls() {
+    // This call is a statement itself, not part of an assignment.
+    void_like_helper(10);
 }
 
-// Test if-else where else has nested if (creates empty blocks)
-int test_nested_if_in_else(int n) {
-    int val = 0;
+// Tests empty statements (stmt -> SEMI rule).
+int test_empty_statements(int n) {
+    int i = 0;
+
+    // An empty statement as the body of a while loop.
+    while (i < n)
+        i = i + 1;
+
+    // An empty statement in an if/else body.
+    if (n > 10)
+        ; // Do nothing.
+    else
+        ; // Also do nothing.
     
-    if (n > 10) {
-        val = 100;
-    } else {
-        val = 50;
-        if (n == 5) {
-            val = 999;
-        }
+    ;; // Consecutive empty statements.
+    return i;
+}
+
+// Tests the 'return' statement without an expression (retStmt -> 'return' SEMI).
+// NOTE: This is valid by the grammar, even if semantically strange for a non-void function.
+int test_no_expr_return() {
+    g_counter = 5;
+    // The grammar allows 'return;', so this must be parsed correctly.
+    // In a real C compiler this would be a warning/error without a 'void' return type.
+    return;
+}
+
+// Tests unreachable code after a return statement to check CFG dead code elimination.
+int test_unreachable_code() {
+    int x = 1;
+    if (x == 1) {
+        return 10;
+        x = 99; // This is unreachable code.
     }
-    
-    return val;
+    return 20;
 }
 
 int main() {
-    int x = 3;
-    int result;
+    // This file tests grammar rules that are not commonly used.
+    test_standalone_calls();
+    test_empty_statements(3);
+    test_no_expr_return();
+    test_unreachable_code();
     
-    result = test_empty_blocks(x);
-    result = test_simple_if(x);
-    result = test_nested_if_in_else(x);
-    
-    return 0;
+    return g_counter;
 }
