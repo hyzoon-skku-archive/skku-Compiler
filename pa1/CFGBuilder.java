@@ -10,7 +10,7 @@ import org.antlr.v4.runtime.tree.*;
  */
 class BasicBlock {
     String id;                                              // Unique identifier for the basic block
-    List<String> statements = new ArrayList<>();            // List of statements within this block (CFAVistor add statements here)
+    List<String> statements = new ArrayList<>();            // List of statements within this block (CFAVisitor add statements here)
     Set<BasicBlock> predecessors = new LinkedHashSet<>();   // Set of blocks that can branch to this block
     Set<BasicBlock> successors   = new LinkedHashSet<>();   // Set of blocks this block can branch to
 
@@ -319,9 +319,8 @@ class CFAVisitor extends simpleCBaseVisitor<Void> {
     /**
      * (helper) Final post-processing step to replace all placeholders (e.g., @FOLLOW_BLOCK@)
      * in the statements with the final, renumbered IDs of their target blocks.
-     * @param func The function whose labels are to be updated.
      */
-    private void updateLabels(Function func) {
+    private void updateLabels() {
         for (Map.Entry<BasicBlock, BasicBlock> e : loopFollowBlocks.entrySet()) {
             BasicBlock cond = e.getKey();
             BasicBlock follow = e.getValue();
@@ -419,7 +418,7 @@ class CFAVisitor extends simpleCBaseVisitor<Void> {
         updateTargetMappings(currentFunction);
         removeDeadBlocks(currentFunction); 
         renumberBlocks(currentFunction);
-        updateLabels(currentFunction);
+        updateLabels();
 
         // Reset state
         currentFunction = null;
@@ -457,7 +456,7 @@ class CFAVisitor extends simpleCBaseVisitor<Void> {
             comments.append(" # call in expr: ").append(callee).append(" -> ").append(callee).append("_entry");
         }
         
-        currentBlock.addStatement(stmtText + comments.toString());
+        currentBlock.addStatement(stmtText + comments);
         return null;
     }
 
@@ -496,7 +495,7 @@ class CFAVisitor extends simpleCBaseVisitor<Void> {
             }
         }
         
-        currentBlock.addStatement(stmtText + comments.toString());
+        currentBlock.addStatement(stmtText + comments);
         currentBlock.addSuccessor(currentFunction.exit);
         currentBlock = null; // This block is now terminated
         return null;

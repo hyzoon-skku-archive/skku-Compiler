@@ -39,6 +39,12 @@ run_cfa: all
 
 
 # Run CFGBuilder on test_code/test1.c ~ test3.c
+given: all
+	java -classpath $(CLASSPATH) $(PROG) $(TESTDIR)/given.c > $(BUILDDIR)/given.out
+	@echo ""
+	@echo "--- CFG analyzed for given.c ---"
+	@cat $(BUILDDIR)/given.out
+
 test1: all
 	java -classpath $(CLASSPATH) $(PROG) $(TESTDIR)/test1.c > $(BUILDDIR)/test1.out
 	@echo ""
