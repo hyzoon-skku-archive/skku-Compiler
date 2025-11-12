@@ -590,8 +590,9 @@ class CFAVisitor extends simpleCBaseVisitor<Void> {
     }
 
     /**
+     * [MODIFIED]
      * Visits a for statement, creating the loop structure in the CFG.
-     * Handles initialization, condition, increment, body, and follow blocks.
+     * Combines loop body and increment into a single BasicBlock as per lecture slides.
      * @param ctx The for statement context.
      * @return null.
      */
@@ -599,33 +600,34 @@ class CFAVisitor extends simpleCBaseVisitor<Void> {
     public Void visitForStmt(simpleCParser.ForStmtContext ctx) {
         ensureCurrentBlock();
         
-        // initialization statement
+        // 1. initialization statement
         currentBlock.addStatement(getFullText(ctx.assign(0)) + ";");
 
         BasicBlock cond = createNewBlock(); // Block for the loop condition
         currentBlock.addSuccessor(cond);
         cond.addStatement("for (" + getFullText(ctx.expr()) + ") # loop_end: " + FOLLOW_PLACEHOLDER);
 
-        BasicBlock body   = createNewBlock();       // Block for the loop body
-        BasicBlock inc    = createNewBlock();       // Block for the increment expression
-        BasicBlock follow = createNewBlock();       // Block for after the loop
-        cond.addSuccessor(body);                    // If condition true, go to body
+        // 2. Create body+inc block and follow block
+        BasicBlock bodyAndInc = createNewBlock();       // Block for *both* body and increment
+        BasicBlock follow     = createNewBlock();       // Block for after the loop
+        
+        cond.addSuccessor(bodyAndInc);              // If condition true, go to body+inc
         cond.addSuccessor(follow);                  // If condition false, go to follow
         loopFollowBlocks.put(cond, follow);
 
-        // Visit the loop body
-        currentBlock = body;
+        // 3. Visit the loop body, adding statements to bodyAndInc
+        currentBlock = bodyAndInc;
         visit(ctx.stmt());
 
-        // End of body goes to increment
-        if (currentBlock != null) currentBlock.addSuccessor(inc);
-
-        // The increment block goes back to the condition
-        currentBlock = inc;
-        currentBlock.addStatement(getFullText(ctx.assign(1)) + ";");
-        currentBlock.addSuccessor(cond);
+        // 4. If body didn't return (e.g., no return stmt inside loop), 
+        //    add increment to the *same block*
+        if (currentBlock != null) { 
+            currentBlock.addStatement(getFullText(ctx.assign(1)) + ";");
+            // 5. Connect body+inc block back to condition
+            currentBlock.addSuccessor(cond);
+        }
         
-        // Continue building from the follow block
+        // 6. Continue building from the follow block
         currentBlock = follow; 
         return null;
     }
@@ -651,6 +653,3 @@ public class CFGBuilder {
         new CFAVisitor().visit(tree);
     }
 }
-
-
-
