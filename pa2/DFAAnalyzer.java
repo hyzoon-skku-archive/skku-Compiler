@@ -63,8 +63,7 @@ public class DFAAnalyzer {
         // postorder CFG list
         List<BasicBlock> postorder = getPostorder(func);
 
-        // 2. generate priority queue (worklist) w/ postorder idx
-        // TODO: should this be reverse post order (dfs) ??
+        // 2. generate priority queue (worklist) w/ postorder idx (bwd analysis)
         PriorityQueue<BasicBlock> worklist = new PriorityQueue<>(
                 Comparator.comparingInt(postorder::indexOf)
         );
@@ -72,7 +71,7 @@ public class DFAAnalyzer {
         // 3. add all blocks (except entry, exit) in work list
         // TODO: should entry block also be in the work list ?? (we added parameter in the entry block def set)
         for (BasicBlock b : func.blocks) {
-            if (b != func.entry && b != func.exit) {
+            if (b != func.exit) {
                 worklist.add(b);
             }
         }
@@ -126,7 +125,6 @@ public class DFAAnalyzer {
             return;
         }
         visited.add(b);
-        // TODO: i traversed successor but same reason, is this ok ??
         for (BasicBlock succ : b.successors) {
             dfsPostorder(succ, visited, order);
         }
@@ -137,6 +135,10 @@ public class DFAAnalyzer {
         try (PrintWriter writer = new PrintWriter(new FileWriter(filename))) {
             for (Function f : functions.values()) {
                 f.sortBlocks();
+
+                // insert separator for func name
+                writer.println("\n### Function: " + f.name);
+
                 for (BasicBlock b : f.blocks) {
                     // ignore entry / exit block
                     if (b == f.entry || b == f.exit) continue;
