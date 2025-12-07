@@ -276,14 +276,14 @@ public class CFAVisitor extends simpleCBaseVisitor<Void> {
         currentBlock.addStatement(stmtText + comments);
 
         // calc 'def & 'use' set in assign stmt
-        // 1. LHS = 'def'
+        // NOTE: w/ assignment's simpleC.g4, case like "x = x + 1" cannot happen, so just for completeness
+        // 1. RHS = 'use'
+        Set<String> usedVars = varVisitor.visit(ctx.assign().expr());
+        addUseVars(usedVars);
+
+        // 2. LHS = 'def'
         String defVar = ctx.assign().ID().getText();
         currentBlock.def.add(defVar);
-
-        // 2. RHS = 'use'
-        Set<String> usedVars = varVisitor.visit(ctx.assign().expr());
-        currentBlock.use.addAll(usedVars);
-
         return null;
     }
 
@@ -307,7 +307,7 @@ public class CFAVisitor extends simpleCBaseVisitor<Void> {
         // calc 'use' set in call stmt
         // argument = 'use'
         if (ctx.call().argList() != null) {
-            currentBlock.use.addAll(varVisitor.visit(ctx.call().argList()));
+            addUseVars(varVisitor.visit(ctx.call().argList()));
         }
 
         return null;
@@ -321,7 +321,7 @@ public class CFAVisitor extends simpleCBaseVisitor<Void> {
 
         // calc 'use' set in return stmt
         if (ctx.expr() != null) {
-            currentBlock.use.addAll(varVisitor.visit(ctx.expr()));
+            addUseVars(varVisitor.visit(ctx.expr()));
 
             List<String> callees = new ArrayList<>();
             collectCallees(ctx.expr(), callees);
@@ -342,7 +342,7 @@ public class CFAVisitor extends simpleCBaseVisitor<Void> {
         BasicBlock condBlock = currentBlock;
 
         // calc 'use' set in if stmt
-        currentBlock.use.addAll(varVisitor.visit(ctx.expr()));
+        addUseVars(varVisitor.visit(ctx.expr()));
 
         // else block
         boolean hasElse = (ctx.stmt(1) != null);
@@ -414,13 +414,13 @@ public class CFAVisitor extends simpleCBaseVisitor<Void> {
         currentBlock.addStatement(initStmt);
 
         // calc 'def' & 'use' set in for stmt
-        // 1. init = 'def'
+        // 1. initUse = 'use'
+        Set<String> initUse = varVisitor.visit(ctx.assign(0).expr());
+        addUseVars(initUse);
+
+        // 2. init = 'def'
         String initDef = ctx.assign(0).ID().getText();
         currentBlock.def.add(initDef);
-
-        // 2. initUse = 'use'
-        Set<String> initUse = varVisitor.visit(ctx.assign(0).expr());
-        currentBlock.use.addAll(initUse);
 
         BasicBlock cond = createNewBlock();
         currentBlock.addSuccessor(cond);
@@ -453,5 +453,15 @@ public class CFAVisitor extends simpleCBaseVisitor<Void> {
 
         currentBlock = follow;
         return null;
+    }
+
+    private void addUseVars(Set<String> usedVars) {
+        // ignore when local def var used
+        if (currentBlock == null) return;
+        for (String var : usedVars) {
+            if (!currentBlock.def.contains(var)) {
+                currentBlock.use.add(var);
+            }
+        }
     }
 }
