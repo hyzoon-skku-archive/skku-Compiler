@@ -443,10 +443,10 @@ public class CFAVisitor extends simpleCBaseVisitor<Void> {
             currentBlock.addStatement(getFullText(ctx.assign(1)) + ";");
 
             // 4. incr = 'def' & 'use'
-            String incDef = ctx.assign(1).ID().getText();
-            bodyAndInc.def.add(incDef);
             Set<String> incUse = varVisitor.visit(ctx.assign(1).expr());
-            bodyAndInc.use.addAll(incUse);
+            addUseVars(incUse);
+            String incDef = ctx.assign(1).ID().getText();
+            currentBlock.def.add(incDef);
 
             currentBlock.addSuccessor(cond);
         }
