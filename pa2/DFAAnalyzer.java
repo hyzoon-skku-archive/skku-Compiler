@@ -157,6 +157,6 @@ public class DFAAnalyzer {
         if (set == null || set.isEmpty()) {
             return ";";
         }
-        return String.join(", ", set);
+        return String.join(", ", set) + ";";
     }
 }
